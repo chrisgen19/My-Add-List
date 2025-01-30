@@ -1,157 +1,174 @@
 <?php
 /*
 Plugin Name: My Add List
-Plugin URI: cgdiomampo.dev
-Description: A simple plugin to manage and display lists using shortcodes
+Description: A plugin to manage and display sortable lists using shortcode
 Version: 1.0
 Author: Christian Diomampo
 */
 
-/* to use the shortcode, use [myaddlist] */
-
+// Prevent direct access
 if (!defined('ABSPATH')) {
     exit;
 }
 
-function myadd_admin_menu() {
-    add_menu_page(
-        'My Add List Settings',
-        'My Add List',
-        'manage_options',
-        'myadd-settings',
-        'myadd_settings_page',
-        'dashicons-list-view'
-    );
-}
-add_action('admin_menu', 'myadd_admin_menu');
-
-function myadd_register_settings() {
-    register_setting('myadd_options', 'myadd_items');
-}
-add_action('admin_init', 'myadd_register_settings');
-
-function myadd_admin_scripts($hook) {
-    if ($hook != 'toplevel_page_myadd-settings') {
-        return;
+// Plugin Class
+class MyAddList {
+    private static $instance = null;
+    
+    public static function getInstance() {
+        if (self::$instance == null) {
+            self::$instance = new MyAddList();
+        }
+        return self::$instance;
     }
     
-    wp_enqueue_script('jquery-ui-sortable');
-    wp_enqueue_script('myadd-admin', plugins_url('js/admin.js', __FILE__), array('jquery', 'jquery-ui-sortable'), '1.0', true);
-    wp_enqueue_style('myadd-admin-style', plugins_url('css/admin.css', __FILE__));
-}
-add_action('admin_enqueue_scripts', 'myadd_admin_scripts');
-
-function myadd_settings_page() {
-    if (!current_user_can('manage_options')) {
-        return;
+    private function __construct() {
+        add_action('admin_menu', array($this, 'addAdminMenu'));
+        add_shortcode('myaddlist', array($this, 'renderList'));
+        add_action('admin_enqueue_scripts', array($this, 'addAdminScripts'));
+        add_action('wp_ajax_save_list_items', array($this, 'saveListItems'));
     }
     
-    $items = get_option('myadd_items', array());
-    ?>
-    <div class="wrap">
-        <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
+    public function addAdminMenu() {
+        add_menu_page(
+            'My Add List',
+            'My Add List',
+            'manage_options',
+            'my-add-list',
+            array($this, 'renderAdminPage'),
+            'dashicons-list-view'
+        );
+    }
+    
+    public function addAdminScripts($hook) {
+        if ($hook != 'toplevel_page_my-add-list') {
+            return;
+        }
         
-        <div class="myadd-container">
-            <form method="post" action="options.php" id="myadd-form">
-                <?php settings_fields('myadd_options'); ?>
-                
-                <div class="myadd-items" id="sortable-list">
-                    <?php
-                    if (!empty($items)) {
-                        foreach ($items as $key => $item) {
-                            echo '<div class="myadd-item">';
-                            echo '<input type="text" name="myadd_items[]" value="' . esc_attr($item) . '">';
-                            echo '<button type="button" class="remove-item button">Remove</button>';
-                            echo '</div>';
-                        }
-                    }
-                    ?>
+        wp_enqueue_script(
+            'my-add-list-js',
+            plugins_url('js/admin.js', __FILE__),
+            array('jquery'),
+            '1.0',
+            true
+        );
+        
+        wp_enqueue_style(
+            'my-add-list-css',
+            plugins_url('css/admin.css', __FILE__)
+        );
+        
+        wp_localize_script('my-add-list-js', 'myAddListAjax', array(
+            'ajaxurl' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('my_add_list_nonce')
+        ));
+    }
+    
+    public function renderAdminPage() {
+        $items = get_option('my_add_list_items', array());
+        ?>
+        <div class="wrap">
+            <h1>My Add List</h1>
+            <div class="list-manager-container">
+                <div class="add-item-section">
+                    <input type="text" id="new-item-text" placeholder="Enter new item">
+                    <button id="add-item" class="button button-primary">Add Item</button>
                 </div>
                 
-                <div class="myadd-controls">
-                    <button type="button" class="add-item button button-secondary">Add New Item</button>
-                    <?php submit_button('Save Changes'); ?>
+                <div class="items-container">
+                    <h3>Current Items</h3>
+                    <ul id="sortable-list">
+                        <?php foreach ($items as $item): ?>
+                            <li class="list-item" data-id="<?php echo esc_attr($item['id']); ?>">
+                                <span class="item-text"><?php echo esc_html($item['text']); ?></span>
+                                <span class="item-handle">☰</span>
+                                <button class="remove-item">×</button>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
                 </div>
-            </form>
+                
+                <div class="shortcode-info">
+                    <p>Use shortcode <code>[myaddlist]</code> to display this list on any page or post.</p>
+                </div>
+            </div>
         </div>
-    </div>
-    <?php
-}
-
-function myadd_shortcode() {
-    $items = get_option('myadd_items', array());
-    
-    if (empty($items)) {
-        return '<p>No items found.</p>';
+        <?php
     }
     
-    $output = '<ul class="myadd-frontend">';
-    foreach ($items as $item) {
-        $output .= '<li>' . esc_html($item) . '</li>';
+    public function saveListItems() {
+        if (!check_ajax_referer('my_add_list_nonce', 'nonce', false)) {
+            wp_send_json_error('Invalid nonce');
+            return;
+        }
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Insufficient permissions');
+            return;
+        }
+        
+        $items = isset($_POST['items']) ? $_POST['items'] : array();
+        $sanitized_items = array();
+        
+        foreach ($items as $item) {
+            $sanitized_items[] = array(
+                'id' => sanitize_text_field($item['id']),
+                'text' => sanitize_text_field($item['text'])
+            );
+        }
+        
+        update_option('my_add_list_items', $sanitized_items);
+        wp_send_json_success();
     }
-    $output .= '</ul>';
     
-    return $output;
+    public function renderList($atts) {
+        $items = get_option('my_add_list_items', array());
+        
+        if (empty($items)) {
+            return '';
+        }
+        
+        $output = '<ul class="my-add-list-items">';
+        foreach ($items as $item) {
+            $output .= '<li>' . esc_html($item['text']) . '</li>';
+        }
+        $output .= '</ul>';
+        
+        return $output;
+    }
 }
-add_shortcode('myaddlist', 'myadd_shortcode');
 
-function myadd_activate() {
-    wp_mkdir_p(plugin_dir_path(__FILE__) . 'js');
-    $js_content = <<<EOT
-jQuery(document).ready(function($) {
-    // Make list sortable
-    $('#sortable-list').sortable({
-        handle: '.myadd-item',
-        placeholder: 'myadd-placeholder',
-        opacity: 0.7
-    });
+MyAddList::getInstance();
 
-    // Add new item
-    $('.add-item').on('click', function() {
-        var newItem = $('<div class="myadd-item">' +
-            '<input type="text" name="myadd_items[]" value="">' +
-            '<button type="button" class="remove-item button">Remove</button>' +
-            '</div>');
-        $('#sortable-list').append(newItem);
-    });
-
-    // Remove item
-    $(document).on('click', '.remove-item', function() {
-        $(this).parent('.myadd-item').remove();
-    });
+register_activation_hook(__FILE__, function() {
+    if (!get_option('my_add_list_items')) {
+        add_option('my_add_list_items', array());
+    }
 });
-EOT;
-    file_put_contents(plugin_dir_path(__FILE__) . 'js/admin.js', $js_content);
 
-    wp_mkdir_p(plugin_dir_path(__FILE__) . 'css');
-    $css_content = <<<EOT
-.myadd-item {
-    padding: 10px;
-    background: #fff;
-    border: 1px solid #ddd;
-    margin-bottom: 5px;
-    cursor: move;
-}
-
-.myadd-placeholder {
-    border: 1px dashed #ccc;
-    height: 40px;
-    margin-bottom: 5px;
-}
-
-.myadd-item input[type="text"] {
-    width: calc(100% - 100px);
-    margin-right: 10px;
-}
-
-.myadd-controls {
-    margin-top: 20px;
-}
-
-.add-item {
-    margin-right: 10px;
-}
-EOT;
-    file_put_contents(plugin_dir_path(__FILE__) . 'css/admin.css', $css_content);
-}
-register_activation_hook(__FILE__, 'myadd_activate');
+register_deactivation_hook(__FILE__, function() {
+    delete_option('my_add_list_items');
+    
+    $role = get_role('administrator');
+    if ($role) {
+        $role->remove_cap('manage_my_add_list');
+    }
+    
+    wp_clear_scheduled_hook('my_add_list_cleanup');
+    
+    delete_transient('my_add_list_cache');
+    
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'my_add_list';
+    $sql = "DROP TABLE IF EXISTS $table_name";
+    $wpdb->query($sql);
+    
+    wp_cache_delete('my_add_list_items', 'my_add_list');
+    
+    $upload_dir = wp_upload_dir();
+    $plugin_upload_dir = $upload_dir['basedir'] . '/my-add-list';
+    if (is_dir($plugin_upload_dir)) {
+        array_map('unlink', glob("$plugin_upload_dir/*.*"));
+        rmdir($plugin_upload_dir);
+    }
+});

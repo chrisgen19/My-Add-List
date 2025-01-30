@@ -1,26 +1,87 @@
-.myadd-item {
-    padding: 10px;
+.list-manager-container {
+    max-width: 800px;
+    margin: 20px 0;
+}
+
+.add-item-section {
+    margin-bottom: 20px;
+}
+
+#new-item-text {
+    width: 300px;
+    padding: 5px;
+    margin-right: 10px;
+}
+
+.items-container {
     background: #fff;
+    padding: 20px;
+    border: 1px solid #ccd0d4;
+    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+}
+
+#sortable-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.list-item {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    margin: 5px 0;
+    background: #f8f9fa;
     border: 1px solid #ddd;
-    margin-bottom: 5px;
     cursor: move;
 }
 
-.myadd-placeholder {
-    border: 1px dashed #ccc;
-    height: 40px;
-    margin-bottom: 5px;
+.list-item.dragging {
+    opacity: 0.5;
+    background: #e9ecef;
 }
 
-.myadd-item input[type="text"] {
-    width: calc(100% - 100px);
+.item-text {
+    flex-grow: 1;
     margin-right: 10px;
 }
 
-.myadd-controls {
+.item-handle {
+    margin-right: 10px;
+    color: #999;
+    cursor: move;
+}
+
+.remove-item {
+    background: none;
+    border: none;
+    color: #dc3545;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0 5px;
+}
+
+.remove-item:hover {
+    color: #bd2130;
+}
+
+.shortcode-info {
     margin-top: 20px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-left: 4px solid #007cba;
 }
 
-.add-item {
-    margin-right: 10px;
+.shortcode-info code {
+    background: #fff;
+    padding: 2px 5px;
+}
+
+.my-add-list-items {
+    margin: 20px 0;
+    padding-left: 20px;
+}
+
+.my-add-list-items li {
+    margin: 5px 0;
 }
